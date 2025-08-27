@@ -1,0 +1,22 @@
+# Server config
+host: "localhost"
+port: 8080
+
+# Logging
+log_level: "info"
+log_file: "server.log"
+
+# User Database
+database: # uses SQLite, so ttl is for caching to prevent hititng db locks
+  ttl: 5 # for user caching before pushing to DB
+  path: "users.db" # SQLite db file
+  
+# Path
+# Env variables
+# - username: The username of the user
+# - repo: The name of the repository
+# - user: The user ID
+# - repo_id: The repository ID
+# Example: /snarkydev/my-website
+
+path: "/{username}/{repo}"
