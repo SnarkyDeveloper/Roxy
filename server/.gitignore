@@ -1,0 +1,7 @@
+# Ignore binary and database files from development testing
+
+*.exe
+*.db
+*.log
+*.sqlite
+*.sqlite3

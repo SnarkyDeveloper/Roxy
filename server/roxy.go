@@ -1,10 +1,11 @@
-package server
+package main
 
 import (
 	"log"
 	"os"
 	"roxy/server/backend"
 	"roxy/server/config"
+	"roxy/server/user"
 )
 
 /*
@@ -21,6 +22,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	logger := log.New(os.Stdout, "[ROXY]", log.LstdFlags) // Output example: [ROXY] 2024/06/01 12:00:00 message
+	logger := log.New(os.Stdout, "[ROXY] ", log.LstdFlags) // Output example: [ROXY] 2024/06/01 12:00:00 message
+	user.InitDB(config, logger)
 	backend.StartServer(config, logger)
 }

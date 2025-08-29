@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"roxy/server/config"
 	"roxy/server/user"
+	"slices"
 )
 
 var (
@@ -13,8 +14,49 @@ var (
 	logger *log.Logger
 )
 
+func allowedMethods(allowed interface{}, w http.ResponseWriter, r *http.Request) {
+	var methods []string
+	switch v := allowed.(type) {
+	case string:
+		methods = []string{v}
+	case []string:
+		methods = v
+	default:
+		http.Error(w, "Invalid allowed methods type", http.StatusInternalServerError)
+		return
+	}
+	if slices.Contains(methods, r.Method) {
+		return
+	}
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+func AuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+		if token == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		valid := user.ValidateToken(token)
+		if !valid {
+			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/signup", SignUpHandler)
+	mux.HandleFunc("/signin", SignInHandler)
 	mux.HandleFunc("/status", statusHandler)
+	mux.Handle("/protected", AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("You have accessed a protected route"))
+	})))
+
+	logger.Println("All routes registered and server started on port", cfg.Port)
 }
 
 func StartServer(config *config.Config, logInstance *log.Logger) {
@@ -46,6 +88,7 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SignUpHandler(w http.ResponseWriter, r *http.Request) {
+	allowedMethods("POST", w, r)
 	r.ParseForm()
 	username := r.FormValue("username")
 	password := r.FormValue("password")
@@ -54,7 +97,7 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if user already exists
+	// does exist
 	_, exists := user.GetUser(username)
 	if exists {
 		http.Error(w, "User already exists", http.StatusConflict)
@@ -73,8 +116,28 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 		UserID:   userID,
 		Token:    token,
 	}
+	logger.Println(newUser)
 	user.AddUser(newUser)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(`{"message":"User created successfully","token":"` + token + `"}`))
+}
+
+func SignInHandler(w http.ResponseWriter, r *http.Request) {
+	allowedMethods(http.MethodPost, w, r)
+	r.ParseForm()
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	if username == "" || password == "" {
+		http.Error(w, "Username and password are required", http.StatusBadRequest)
+		return
+	}
+	if !user.CheckUser(username, password) {
+		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		return
+	}
+	u, _ := user.GetUser(username)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"message":"Sign-in successful","token":"` + u.Token + `"}`))
 }
