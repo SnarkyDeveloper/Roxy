@@ -17,6 +17,7 @@ database: # uses SQLite, so ttl is for caching to prevent hititng db locks
 # - repo: The name of the repository
 # - user: The user ID
 # - repo_id: The repository ID
+# - random: A random string for uniqueness (Syntax of {random:N})
 # Example: /snarkydev/my-website
 
 path: "/{username}/{repo}"
