@@ -10,6 +10,7 @@ import (
 	"time"
 
 	_ "github.com/glebarez/go-sqlite"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -74,7 +75,6 @@ func GetUserId(username string) (string, bool) {
 	return userID, userID != ""
 }
 
-// GetUser now takes user_id instead of username
 func GetUser(userID string) (User, bool) { // bool = exists
 	user, ok := userCache[userID]
 	if ok {
@@ -93,7 +93,6 @@ func GetUser(userID string) (User, bool) { // bool = exists
 	return u, true
 }
 
-// RemoveUser now takes user_id instead of username
 func RemoveUser(userID string) {
 	delete(userCache, userID)
 	if sqliteDB == nil {
@@ -102,13 +101,12 @@ func RemoveUser(userID string) {
 	sqliteDB.Exec("DELETE FROM users WHERE user_id = ?", userID)
 }
 
-// CheckUser now takes user_id and password
 func CheckUser(userID, password string) bool {
 	user, ok := GetUser(userID)
 	if !ok {
 		return false
 	}
-	return user.Password == password
+	return bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) == nil
 }
 
 func GenID() string {

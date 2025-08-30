@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+
 	"roxy/server/config"
 	"roxy/server/user"
 	"slices"
+
+	"github.com/julienschmidt/httprouter"
 )
 
 var (
@@ -41,20 +44,21 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 		valid := user.ValidateToken(token)
 		if !valid {
-			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-func registerRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/signup", SignUpHandler)
-	mux.HandleFunc("/signin", SignInHandler)
-	mux.HandleFunc("/status", statusHandler)
-	mux.Handle("/protected", AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("You have accessed a protected route"))
+func registerRoutes(router *httprouter.Router) {
+	router.POST("/signup", signUpHandler)
+	router.POST("/login", signInHandler)
+	router.GET("/status", statusHandler)
+	router.Handler("GET", "/protected/:name", AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ps := httprouter.ParamsFromContext(r.Context())
+		name := ps.ByName("name")
+		w.Write([]byte("Hello, " + name + "! This is a protected route."))
 	})))
 
 	logger.Println("All routes registered and server started on port", cfg.Port)
@@ -63,11 +67,11 @@ func registerRoutes(mux *http.ServeMux) {
 func StartServer(config *config.Config, logInstance *log.Logger) {
 	cfg = config
 	logger = logInstance
-	mux := http.NewServeMux()
-	registerRoutes(mux)
+	router := httprouter.New()
+	registerRoutes(router)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),
-		Handler: mux,
+		Handler: router,
 	}
 
 	logger.Fatal(server.ListenAndServe())
@@ -83,12 +87,12 @@ func HandleError(err error) {
 	}
 }
 
-func statusHandler(w http.ResponseWriter, r *http.Request) {
+func statusHandler(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Server is running"))
 }
 
-func SignUpHandler(w http.ResponseWriter, r *http.Request) {
+func signUpHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	if !allowedMethods(http.MethodPost, w, r) {
 		return
 	}
@@ -125,7 +129,7 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"message":"User created successfully","token":"` + token + `"}`))
 }
 
-func SignInHandler(w http.ResponseWriter, r *http.Request) {
+func signInHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	if !allowedMethods(http.MethodPost, w, r) {
 		return
 	}
@@ -136,11 +140,16 @@ func SignInHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Username and password are required", http.StatusBadRequest)
 		return
 	}
-	if !user.CheckUser(username, password) {
+	userId, ok := user.GetUserId(username)
+	if !ok {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
-	u, _ := user.GetUser(username)
+	if !user.CheckUser(userId, password) {
+		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		return
+	}
+	u, _ := user.GetUser(userId)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message":"Sign-in successful","token":"` + u.Token + `"}`))
