@@ -25,7 +25,7 @@ func setupTTL(conf *config.Config) {
 	if err != nil {
 		log.Panicln("Failed to open user db:" + err.Error())
 	}
-	_, err = sqlDB.Exec("CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, user_id TEXT, token TEXT)")
+	_, err = sqlDB.Exec("CREATE TABLE IF NOT EXISTS users (username TEXT, password TEXT, user_id TEXT PRIMARY KEY, token TEXT)")
 	if err != nil {
 		log.Panicln("Failed to create user table:" + err.Error())
 	}
@@ -38,11 +38,11 @@ func setupTTL(conf *config.Config) {
 			}
 
 			for _, user := range newUserCache {
-				_, err := sqliteDB.Exec("INSERT OR REPLACE INTO users (username, password, user_id) VALUES (?, ?, ?)", user.Username, user.Password, user.UserID, user.Token)
+				_, err := sqliteDB.Exec("INSERT OR REPLACE INTO users (username, password, user_id, token) VALUES (?, ?, ?, ?)", user.Username, user.Password, user.UserID, user.Token)
 				if err != nil {
 					log.Panicln("Failed to insert user:" + err.Error())
 				}
-				delete(newUserCache, user.Username)
+				delete(newUserCache, user.UserID)
 			}
 		}
 	}()
@@ -55,16 +55,28 @@ func InitDB(conf *config.Config, logInstance *log.Logger) {
 
 func AddUser(user User) {
 	hashedUser := hashUser(user)
-	newUserCache[user.Username] = hashedUser // hash on cache add, not on every check
+	newUserCache[user.UserID] = hashedUser // key by user_id
 	if sqliteDB == nil {
 		log.Panicln("DB not initialized")
 	}
-	userCache[user.Username] = hashedUser // if it doesn't fail
+	userCache[user.UserID] = hashedUser
 }
 
-func GetUser(username string) (User, bool) { // bool = exists
-	user, ok := userCache[username]
-	logger.Println("GetUser:", username, "found in cache:", ok)
+func GetUserId(username string) (string, bool) {
+	if userCache[username].UserID != "" {
+		return userCache[username].UserID, true
+	}
+	if sqliteDB == nil {
+		log.Panicln("DB not initialized")
+	}
+	var userID string
+	sqliteDB.QueryRow("SELECT user_id FROM users WHERE username = ?", username).Scan(&userID)
+	return userID, userID != ""
+}
+
+// GetUser now takes user_id instead of username
+func GetUser(userID string) (User, bool) { // bool = exists
+	user, ok := userCache[userID]
 	if ok {
 		return user, ok
 	}
@@ -72,30 +84,27 @@ func GetUser(username string) (User, bool) { // bool = exists
 		log.Panicln("DB not initialized")
 	}
 	var u User
-	err := sqliteDB.QueryRow("SELECT username, password, user_id, token FROM users WHERE username = ?", username).
+	err := sqliteDB.QueryRow("SELECT username, password, user_id, token FROM users WHERE user_id = ?", userID).
 		Scan(&u.Username, &u.Password, &u.UserID, &u.Token)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			logger.Println("GetUser:", username, "not found in db")
-		} else {
-			logger.Println("GetUser:", username, "error querying db:", err)
-		}
 		return User{}, false
 	}
-	userCache[username] = u
+	userCache[userID] = u
 	return u, true
 }
 
-func RemoveUser(username string) {
-	delete(userCache, username)
+// RemoveUser now takes user_id instead of username
+func RemoveUser(userID string) {
+	delete(userCache, userID)
 	if sqliteDB == nil {
 		log.Panicln("DB not initialized")
 	}
-	sqliteDB.Exec("DELETE FROM users WHERE username = ?", username)
+	sqliteDB.Exec("DELETE FROM users WHERE user_id = ?", userID)
 }
 
-func CheckUser(username, password string) bool {
-	user, ok := GetUser(username)
+// CheckUser now takes user_id and password
+func CheckUser(userID, password string) bool {
+	user, ok := GetUser(userID)
 	if !ok {
 		return false
 	}
@@ -130,11 +139,11 @@ func ValidateToken(token string) bool {
 		log.Panicln("DB not initialized")
 	}
 
-	var username string
-	sqliteDB.QueryRow("SELECT user_id FROM users WHERE token = ?", token).Scan(&username)
-	if username == "" {
+	var userID string
+	sqliteDB.QueryRow("SELECT user_id FROM users WHERE token = ?", token).Scan(&userID)
+	if userID == "" {
 		return false
 	}
-	u, _ := GetUser(username)
+	u, _ := GetUser(userID)
 	return u.Token == token
 }

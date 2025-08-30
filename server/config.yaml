@@ -8,7 +8,7 @@ log_file: "server.log"
 
 # User Database
 database: # uses SQLite, so ttl is for caching to prevent hititng db locks
-  ttl: 5 # for user caching before pushing to DB
+  ttl: 1 # for user caching before pushing to DB (Seconds)
   path: "users.db" # SQLite db file
   
 # Path

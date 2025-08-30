@@ -14,7 +14,7 @@ var (
 	logger *log.Logger
 )
 
-func allowedMethods(allowed interface{}, w http.ResponseWriter, r *http.Request) {
+func allowedMethods(allowed interface{}, w http.ResponseWriter, r *http.Request) bool {
 	var methods []string
 	switch v := allowed.(type) {
 	case string:
@@ -22,13 +22,14 @@ func allowedMethods(allowed interface{}, w http.ResponseWriter, r *http.Request)
 	case []string:
 		methods = v
 	default:
-		http.Error(w, "Invalid allowed methods type", http.StatusInternalServerError)
-		return
+		http.Error(w, "Method not allowed", http.StatusInternalServerError)
+		return false
 	}
 	if slices.Contains(methods, r.Method) {
-		return
+		return true
 	}
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	return false // Stop further processing
 }
 
 func AuthMiddleware(next http.Handler) http.Handler {
@@ -88,7 +89,9 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SignUpHandler(w http.ResponseWriter, r *http.Request) {
-	allowedMethods("POST", w, r)
+	if !allowedMethods(http.MethodPost, w, r) {
+		return
+	}
 	r.ParseForm()
 	username := r.FormValue("username")
 	password := r.FormValue("password")
@@ -98,7 +101,7 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// does exist
-	_, exists := user.GetUser(username)
+	_, exists := user.GetUserId(username)
 	if exists {
 		http.Error(w, "User already exists", http.StatusConflict)
 		return
@@ -116,7 +119,6 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 		UserID:   userID,
 		Token:    token,
 	}
-	logger.Println(newUser)
 	user.AddUser(newUser)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -124,7 +126,9 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SignInHandler(w http.ResponseWriter, r *http.Request) {
-	allowedMethods(http.MethodPost, w, r)
+	if !allowedMethods(http.MethodPost, w, r) {
+		return
+	}
 	r.ParseForm()
 	username := r.FormValue("username")
 	password := r.FormValue("password")
