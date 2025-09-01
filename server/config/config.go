@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
+	Timeout  int    `yaml:"timeout"` // ms
 	LogLevel string `yaml:"log_level"`
 	LogFile  string `yaml:"log_file"`
 	Database struct {

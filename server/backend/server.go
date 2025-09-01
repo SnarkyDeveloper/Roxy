@@ -74,6 +74,11 @@ func registerRoutes(router *httprouter.Router) {
 		websocket.Handler(startShare).ServeHTTP(w, r)
 	})
 
+	cfg.ParsePath()
+	router.HandlerFunc("*", cfg.Path, func(w http.ResponseWriter, r *http.Request) {
+		handleExternReq(w, r, nil)
+	})
+
 	logger.Println("All routes registered and server started on port", cfg.Port)
 }
 
@@ -100,9 +105,15 @@ func HandleError(err error) {
 	}
 }
 
-func statusHandler(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
+func statusHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Server is running"))
+	w.Header().Set("Content-Type", "application/json")
+
+	if user.ValidateToken(r.Header.Get("Authorization")) {
+		w.Write([]byte(`{"status":"ok","authenticated":true}`))
+		return
+	}
+	w.Write([]byte(`{"status":"ok","authenticated":false}`))
 }
 
 func signUpHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -243,7 +254,12 @@ func startShare(ws *websocket.Conn) {
 	}
 }
 
-func handleExternReq(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+type request struct {
+	Nonce string `json:"nonce"`
+	Req   string `json:"req"`
+}
+
+func handleExternReq(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var isValid bool
 	var connection *Connection
 	for _, v := range connectedClients {
@@ -273,53 +289,61 @@ func handleExternReq(w http.ResponseWriter, r *http.Request, ps httprouter.Param
 		return
 	}
 	nonce := base64.URLEncoding.EncodeToString(nonceBytes)
-
-	r.Header.Set("ROXY-WS-NONCE", nonce) // for verification of request to relay response
-	// dump request to ws
-
+	req := request{
+		Nonce: nonce,
+	}
 	// convert r to bytes using httputil
 	reqBytes, err := httputil.DumpRequest(r, true)
 	if err != nil {
 		http.Error(w, "Failed to process request", http.StatusInternalServerError)
 		return
 	}
-	err = websocket.Message.Send(connection.WS, reqBytes)
+	req.Req = base64.StdEncoding.EncodeToString(reqBytes)
+	err = websocket.Message.Send(connection.WS, req)
 	if err != nil {
 		http.Error(w, "Failed to process request", http.StatusInternalServerError)
 		return
 	}
+	start_time := helpers.CurrentMillis()
 	// wait for response with same nonce
-	var respBytes []byte
-	for {
-		err = websocket.Message.Receive(connection.WS, &respBytes)
+	var resp request
+	for helpers.CurrentMillis()-start_time < int64(cfg.Timeout) { // timeout defined in config
+		err = websocket.Message.Receive(connection.WS, &resp) // unmarshal
 		if err != nil {
 			http.Error(w, "Failed to receive response", http.StatusInternalServerError)
 			return
 		}
 		// check if nonce matches
-		if len(respBytes) < 100 { // arbitrary small size to filter out non-responses
+		if len(resp.Req) < 100 { // filter out non-responses
 			continue
 		}
-		resp, err := http.ReadResponse(bufio.NewReader(httputil.NewChunkedReader(&mockConn{data: respBytes})), r)
-		if err != nil {
-			continue
-		}
-		if resp.Header.Get("ROXY-WS-NONCE") == nonce {
-			for k, v := range resp.Header {
-				for _, vv := range v {
-					w.Header().Add(k, vv)
-				}
-			}
-			w.WriteHeader(resp.StatusCode)
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				http.Error(w, "Failed to read response body", http.StatusInternalServerError)
-				resp.Body.Close()
-				break
-			}
-			w.Write(bodyBytes)
-			resp.Body.Close()
+		if resp.Nonce == nonce {
 			break
 		}
 	}
+	if resp.Nonce != nonce {
+		http.Error(w, "Request timed out", http.StatusGatewayTimeout)
+		return
+	}
+	// decode resp.Req from base64
+	respBytes, err := base64.StdEncoding.DecodeString(resp.Req)
+	if err != nil {
+		http.Error(w, "Failed to decode response", http.StatusInternalServerError)
+		return
+	}
+	// write respBytes to w
+	mock := &mockConn{data: respBytes}
+	respRead, err := http.ReadResponse(bufio.NewReader(mock), r)
+	if err != nil {
+		http.Error(w, "Failed to read response", http.StatusInternalServerError)
+		return
+	}
+	defer respRead.Body.Close()
+	for k, v := range respRead.Header {
+		for _, vv := range v {
+			w.Header().Add(k, vv)
+		}
+	}
+	w.WriteHeader(respRead.StatusCode)
+	io.Copy(w, respRead.Body)
 }

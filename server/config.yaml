@@ -1,6 +1,7 @@
 # Server config
 host: "localhost"
 port: 8080
+timeout: 10000 # ms
 
 # Logging
 log_level: "info"

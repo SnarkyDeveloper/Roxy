@@ -58,3 +58,7 @@ func CreatePath(config *config.Config, user user.User, repo config.Repo) string 
 	}
 	return path // example: /{username}/{repo} -> /snarky/roxy
 }
+
+func CurrentMillis() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
+}
