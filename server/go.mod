@@ -7,7 +7,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/julienschmidt/httprouter v1.3.0 // indirect
+require github.com/julienschmidt/httprouter v1.3.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -15,6 +15,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/crypto v0.41.0
+	golang.org/x/net v0.43.0
 	golang.org/x/sys v0.35.0 // indirect
 	modernc.org/libc v1.37.6 // indirect
 	modernc.org/mathutil v1.6.0 // indirect

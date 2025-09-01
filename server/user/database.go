@@ -129,10 +129,30 @@ func GenToken(id string) (string, error) {
 	return base64.URLEncoding.EncodeToString([]byte(tokenStr)), nil
 }
 
+func GetIDFromToken(token string) (string, error) {
+	decoded, err := base64.URLEncoding.DecodeString(token)
+	if err != nil {
+		return "", err
+	}
+	var id string
+	_, err = fmt.Sscanf(string(decoded), "%[^:]:%*s", &id)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 func ValidateToken(token string) bool {
 	if token == "" {
 		return false
 	}
+	// use cache
+	for _, u := range userCache {
+		if u.Token == token {
+			return true
+		}
+	}
+	// slow
 	if sqliteDB == nil {
 		log.Panicln("DB not initialized")
 	}
